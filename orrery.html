@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Orrery — a tour of the solar system</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#05080f;
+    --deep:#0a1020;
+    --brass:#c9a227;
+    --brass-dim:#8a6f1c;
+    --starlight:#e8e4d9;
+    --ice:#7fb3d5;
+    --rule:rgba(201,162,39,.28);
+    --panel:rgba(8,13,24,.86);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:var(--void);color:var(--starlight)}
+  body{font-family:"IBM Plex Sans",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  canvas{display:block;position:fixed;inset:0;z-index:0}
+  #gate{z-index:40}
+  #hud{z-index:30}
+  #labels{z-index:20}
+  #panel{z-index:50}
+
+  /* ---------- shared ---------- */
+  .overlay{position:fixed;inset:0;pointer-events:none}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+  :focus-visible{outline:2px solid var(--brass);outline-offset:3px}
+
+  /* ---------- gate ---------- */
+  #gate{
+    position:fixed;inset:0;display:grid;place-items:center;text-align:center;
+    background:linear-gradient(180deg,rgba(5,8,15,.88) 0%,rgba(5,8,15,.62) 42%,rgba(5,8,15,.18) 72%,rgba(5,8,15,0) 100%);
+    transition:opacity 1.1s ease;padding:6vh 7vw;
+    align-content:start;padding-top:11vh;
+  }
+  #gate.gone{opacity:0;pointer-events:none}
+  .gate-inner{max-width:44rem}
+  .mark{
+    font-family:"Cormorant Garamond",serif;font-weight:300;font-style:italic;
+    font-size:clamp(.95rem,1.6vw,1.15rem);color:var(--brass);letter-spacing:.06em;margin-bottom:1.4rem;
+  }
+  h1{
+    font-family:"Cormorant Garamond",serif;font-weight:300;
+    font-size:clamp(3.2rem,11vw,7.5rem);line-height:.92;letter-spacing:-.02em;
+  }
+  h1 em{font-style:italic;font-weight:300}
+  .lede{
+    margin:1.9rem auto 0;max-width:34rem;font-weight:300;
+    font-size:clamp(.95rem,1.5vw,1.06rem);line-height:1.65;color:rgba(232,228,217,.72);
+  }
+  .enter{
+    pointer-events:auto;margin-top:2.8rem;display:inline-flex;align-items:center;gap:.9rem;
+    padding:.95rem 2.1rem;border:1px solid var(--rule);border-radius:999px;
+    font-size:.92rem;font-weight:400;letter-spacing:.02em;color:var(--starlight);
+    transition:border-color .4s,background-color .4s,color .4s;
+  }
+  .enter:hover{border-color:var(--brass);background:rgba(201,162,39,.09);color:#fff}
+  .enter .dot{width:5px;height:5px;border-radius:50%;background:var(--brass);flex:none}
+  .credit{
+    position:fixed;left:0;right:0;bottom:2rem;text-align:center;
+    font-size:.74rem;font-weight:300;color:rgba(232,228,217,.34);letter-spacing:.03em;
+  }
+
+  /* ---------- hud ---------- */
+  #hud{opacity:0;transition:opacity 1s ease .3s}
+  #hud.on{opacity:1}
+  .hud-top{
+    position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;
+    align-items:flex-start;gap:1rem;padding:1.5rem 1.8rem;
+  }
+  .wordmark{
+    pointer-events:auto;font-family:"Cormorant Garamond",serif;font-style:italic;
+    font-size:1.35rem;font-weight:300;color:rgba(232,228,217,.6);
+    transition:color .3s;
+  }
+  .wordmark:hover{color:var(--starlight)}
+  .toolbar{display:flex;gap:.45rem;flex-wrap:wrap;justify-content:flex-end}
+  .tool{
+    pointer-events:auto;padding:.5rem .95rem;border:1px solid rgba(232,228,217,.15);
+    border-radius:999px;font-size:.78rem;font-weight:400;color:rgba(232,228,217,.62);
+    transition:border-color .3s,color .3s,background-color .3s;white-space:nowrap;
+  }
+  .tool:hover{border-color:var(--rule);color:var(--starlight)}
+  .tool[aria-pressed="true"]{border-color:var(--brass);color:var(--brass);background:rgba(201,162,39,.08)}
+
+  .hint{
+    position:fixed;left:1.8rem;bottom:1.6rem;font-size:.76rem;font-weight:300;
+    color:rgba(232,228,217,.38);line-height:1.8;
+  }
+  .hint b{font-weight:500;color:rgba(232,228,217,.62)}
+
+  .speed{
+    position:fixed;right:1.8rem;bottom:1.6rem;display:flex;align-items:center;gap:.8rem;
+    pointer-events:auto;font-size:.76rem;color:rgba(232,228,217,.5);
+  }
+  .speed input{
+    -webkit-appearance:none;appearance:none;width:118px;height:1px;background:rgba(232,228,217,.24);
+    cursor:pointer;
+  }
+  .speed input::-webkit-slider-thumb{
+    -webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:var(--brass);
+  }
+  .speed input::-moz-range-thumb{width:11px;height:11px;border:none;border-radius:50%;background:var(--brass)}
+  .speed output{font-variant-numeric:tabular-nums;min-width:4.4rem;text-align:right;color:rgba(232,228,217,.72)}
+
+  /* ---------- labels ---------- */
+  #labels{position:fixed;inset:0;pointer-events:none}
+  .lbl{
+    position:absolute;transform:translate(-50%,-50%);white-space:nowrap;
+    font-size:.72rem;font-weight:400;letter-spacing:.03em;color:rgba(232,228,217,.62);
+    padding-left:.9rem;pointer-events:auto;cursor:pointer;transition:color .25s;
+  }
+  .lbl::before{
+    content:"";position:absolute;left:0;top:50%;width:5px;height:5px;margin-top:-2.5px;
+    border:1px solid rgba(232,228,217,.5);border-radius:50%;transition:background-color .25s,border-color .25s;
+  }
+  .lbl:hover{color:#fff}
+  .lbl:hover::before{background:var(--brass);border-color:var(--brass)}
+  .lbl.dim{opacity:.35}
+
+  /* ---------- dossier ---------- */
+  #panel{
+    position:fixed;top:0;right:0;bottom:0;width:min(26.5rem,88vw);
+    background:var(--panel);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
+    border-left:1px solid var(--rule);
+    transform:translateX(101%);transition:transform .72s cubic-bezier(.16,1,.3,1);
+    pointer-events:auto;overflow-y:auto;overscroll-behavior:contain;
+  }
+  #panel.open{transform:none}
+  .p-head{padding:2.6rem 2.2rem 1.4rem;border-bottom:1px solid rgba(201,162,39,.16)}
+  .p-close{
+    position:absolute;top:1.3rem;right:1.4rem;width:2rem;height:2rem;border-radius:50%;
+    display:grid;place-items:center;color:rgba(232,228,217,.5);font-size:1.1rem;line-height:1;
+    transition:color .3s,background-color .3s;
+  }
+  .p-close:hover{color:var(--starlight);background:rgba(232,228,217,.08)}
+  .p-kind{font-size:.74rem;font-weight:400;color:var(--brass);letter-spacing:.05em;margin-bottom:.5rem}
+  .p-name{font-family:"Cormorant Garamond",serif;font-weight:300;font-size:3rem;line-height:1;letter-spacing:-.01em}
+  .p-tag{margin-top:.85rem;font-size:.9rem;font-weight:300;line-height:1.6;color:rgba(232,228,217,.68)}
+
+  .p-body{padding:1.6rem 2.2rem 3.5rem}
+  .facts{display:grid;grid-template-columns:1fr 1fr;gap:0}
+  .fact{padding:.95rem 0;border-bottom:1px solid rgba(232,228,217,.09)}
+  .fact:nth-child(odd){padding-right:1rem}
+  .fact dt{font-size:.72rem;font-weight:400;color:rgba(232,228,217,.42);margin-bottom:.3rem}
+  .fact dd{font-size:.93rem;font-weight:400;color:var(--starlight);font-variant-numeric:tabular-nums;line-height:1.35}
+  .fact dd small{display:block;font-size:.72rem;font-weight:300;color:rgba(232,228,217,.42);margin-top:.18rem;font-variant-numeric:normal}
+
+  .sect{margin-top:2.2rem}
+  .sect h3{
+    font-family:"Cormorant Garamond",serif;font-style:italic;font-weight:400;
+    font-size:1.3rem;color:var(--brass);margin-bottom:.8rem;
+  }
+  .sect p{font-size:.9rem;font-weight:300;line-height:1.72;color:rgba(232,228,217,.78)}
+  .sect p + p{margin-top:.8rem}
+  .bar{display:flex;height:5px;border-radius:3px;overflow:hidden;margin:.3rem 0 .9rem}
+  .bar span{height:100%}
+  .comp-key{display:flex;flex-wrap:wrap;gap:.35rem 1.1rem;font-size:.8rem;font-weight:300;color:rgba(232,228,217,.7)}
+  .comp-key i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:.4rem;font-style:normal}
+  .ahead{border-left:1px solid var(--rule);padding-left:1rem}
+  .ahead div{font-size:.88rem;font-weight:300;line-height:1.6;color:rgba(232,228,217,.78)}
+  .ahead div + div{margin-top:.75rem}
+  .ahead b{display:block;font-weight:500;color:var(--brass);font-size:.76rem;margin-bottom:.15rem}
+  .hab{
+    margin-top:1.5rem;padding:.95rem 1.1rem;border:1px solid rgba(232,228,217,.13);border-radius:5px;
+    font-size:.85rem;font-weight:300;line-height:1.6;color:rgba(232,228,217,.72);
+  }
+  .hab strong{display:block;font-weight:500;color:var(--starlight);margin-bottom:.25rem;font-size:.8rem}
+
+  #panel::-webkit-scrollbar{width:3px}
+  #panel::-webkit-scrollbar-thumb{background:rgba(201,162,39,.3)}
+
+  @media (max-width:640px){
+    .hud-top{padding:1rem 1.1rem}
+    .toolbar{gap:.35rem}
+    .tool{padding:.42rem .75rem;font-size:.72rem}
+    .hint{display:none}
+    .speed{left:1.1rem;right:1.1rem;bottom:1.1rem;justify-content:space-between}
+    .speed input{flex:1}
+    .p-head{padding:2.2rem 1.5rem 1.2rem}
+    .p-body{padding:1.4rem 1.5rem 3rem}
+    .p-name{font-size:2.4rem}
+  }
+  @media (prefers-reduced-motion:reduce){
+    #panel{transition-duration:.01ms}
+    #gate{transition-duration:.01ms}
+  }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-inner">
+    <p class="mark">Eight worlds, one star, drawn to scale in time</p>
+    <h1>The <em>Orrery</em></h1>
+    <p class="lede">A working model of the solar system, running on real orbital periods. Every planet moves at its true relative speed — Mercury races, Neptune barely stirs. Click any world to open its record.</p>
+    <button class="enter" id="enterBtn"><span class="dot"></span>Enter the system</button>
+  </div>
+  <p class="credit">Figures from NASA and JPL planetary fact sheets</p>
+</div>
+
+<div class="overlay" id="hud">
+  <div class="hud-top">
+    <button class="wordmark" id="homeBtn">Orrery</button>
+    <div class="toolbar">
+      <button class="tool" id="orbitsBtn" aria-pressed="true">Orbit paths</button>
+      <button class="tool" id="labelsBtn" aria-pressed="true">Labels</button>
+      <button class="tool" id="wideBtn">Whole system</button>
+    </div>
+  </div>
+  <p class="hint"><b>Drag</b> to look around &nbsp;·&nbsp; <b>Scroll</b> to zoom &nbsp;·&nbsp; <b>Click a world</b> to read it</p>
+  <div class="speed">
+    <label for="rate">Time</label>
+    <input type="range" id="rate" min="0" max="100" value="20">
+    <output id="rateOut">14 d/s</output>
+  </div>
+</div>
+
+<div id="labels"></div>
+
+<aside id="panel" aria-live="polite">
+  <div class="p-head">
+    <button class="p-close" id="closeBtn" aria-label="Close record">&times;</button>
+    <p class="p-kind" id="pKind"></p>
+    <h2 class="p-name" id="pName"></h2>
+    <p class="p-tag" id="pTag"></p>
+  </div>
+  <div class="p-body" id="pBody"></div>
+</aside>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ============================================================
+   DATA — real figures, NASA/JPL planetary fact sheets
+   ============================================================ */
+const AU = 150; // scene units per astronomical unit
+
+const SUN = {
+  name:"The Sun", kind:"G2V main-sequence star",
+  tag:"A star of unremarkable size holding 99.86% of all mass in the system.",
+  facts:[
+    ["Diameter","1,392,700 km","109 Earths across"],
+    ["Mass","1.989 × 10³⁰ kg","333,000 Earths"],
+    ["Surface temp","5,500 °C","15,000,000 °C at core"],
+    ["Rotation","25 – 35 days","faster at equator than poles"],
+    ["Age","4.6 billion years","roughly halfway through its life"],
+    ["Light delay","8 min 20 s","sunlight's trip to Earth"]
+  ],
+  comp:[["Hydrogen",73.5,"#f6d365"],["Helium",24.9,"#e08c3f"],["Oxygen & metals",1.6,"#8a6f1c"]],
+  history:"The Sun ignited about 4.6 billion years ago when a collapsing cloud of gas and dust reached the pressure needed for hydrogen fusion. The leftover disk of that collapse became everything else — planets, moons, asteroids, you.\n\nIt fuses roughly 600 million tonnes of hydrogen into helium every second, converting about 4 million tonnes of that into pure energy. That energy takes tens of thousands of years to work its way out from the core, and then just over eight minutes to cross the gap to Earth.",
+  ahead:[["2026 – 2027","Solar Cycle 25 declines from its 2024 maximum; aurora activity gradually falls off."],["Aug 2027","Total solar eclipse crosses Spain, North Africa and the Arabian Peninsula — over six minutes of totality, the longest on land this century."],["~5 billion years","Hydrogen in the core runs out. The Sun swells into a red giant and swallows the inner planets."]],
+  hab:null
+};
+
+const PLANETS = [
+  {
+    id:"mercury", name:"Mercury", kind:"Terrestrial planet",
+    tag:"A cratered iron core with a thin rind of rock, cooked and frozen in the same day.",
+    a:0.387, radius:2.44, period:87.97, spin:1407.6, tilt:0.03, color:0x8c8378,
+    texture:{base:"#8c8378", type:"cratered", accent:"#5d564e"},
+    facts:[
+      ["Diameter","4,879 km","38% of Earth"],
+      ["Distance from Sun","57.9 M km","0.39 AU"],
+      ["Year","88 Earth days","fastest orbit in the system"],
+      ["Day","58.6 Earth days","3 spins per 2 orbits"],
+      ["Gravity","3.7 m/s²","38% of Earth's"],
+      ["Temperature","−173 to 427 °C","the widest swing of any planet"]
+    ],
+    comp:[["Iron core",85,"#b5651d"],["Silicate mantle & crust",15,"#8c8378"]],
+    moons:"None.",
+    history:"Mercury formed roughly 4.5 billion years ago and lost most of its rocky outer layers — probably stripped away by a colossal early impact, leaving a planet that is disproportionately core. Its surface is a record of the Late Heavy Bombardment, barely altered since, because there is almost no atmosphere to erode it and no plate tectonics to recycle it.\n\nThe Caloris Basin, 1,550 km across, was punched out by an impact so violent that the shockwave travelled through the planet and shattered the terrain on the exact opposite side.\n\nDespite daytime temperatures above 400 °C, radar found water ice sitting in craters at the poles where sunlight has never reached.",
+    ahead:[["Nov 2026","BepiColombo, the joint European–Japanese mission, is scheduled to enter Mercury orbit after six flybys."],["2027 onward","Its two orbiters begin mapping the magnetic field and the composition of the crust in far more detail than MESSENGER managed."]],
+    hab:{v:"Uninhabitable",t:"No meaningful atmosphere, no liquid water, and a surface that swings 600 °C between day and night."}
+  },
+  {
+    id:"venus", name:"Venus", kind:"Terrestrial planet",
+    tag:"Earth's twin in size and mass, and a warning about what carbon dioxide can do.",
+    a:0.723, radius:6.05, period:224.7, spin:-5832.5, tilt:177.4, color:0xd6b671,
+    texture:{base:"#d6b671", type:"swirl", accent:"#a8834a"},
+    facts:[
+      ["Diameter","12,104 km","95% of Earth"],
+      ["Distance from Sun","108.2 M km","0.72 AU"],
+      ["Year","224.7 Earth days",""],
+      ["Day","243 Earth days","longer than its year, and backwards"],
+      ["Gravity","8.87 m/s²","90% of Earth's"],
+      ["Surface temp","464 °C","hotter than Mercury, constantly"]
+    ],
+    comp:[["Carbon dioxide",96.5,"#d6b671"],["Nitrogen",3.5,"#7fb3d5"]],
+    moons:"None.",
+    history:"Venus may once have had shallow oceans and a climate not far from Earth's. As the young Sun brightened, that water evaporated, and water vapour is itself a greenhouse gas — so the warming fed on itself until the oceans were gone entirely. What remains is a runaway greenhouse: an atmosphere ninety times heavier than Earth's, clouds of sulphuric acid, and a surface pressure equivalent to standing 900 metres underwater.\n\nIt rotates backwards, and so slowly that a Venusian day outlasts its year. Every probe that has landed there has been crushed or cooked within about two hours.",
+    ahead:[["2029 – 2031","NASA's DAVINCI descent probe and VERITAS radar mapper are slated to launch, alongside ESA's EnVision."],["2117","The next transit of Venus across the face of the Sun. The last was 2012; nobody alive today will see another."]],
+    hab:{v:"Uninhabitable at the surface",t:"Some researchers note the cloud layer 50 km up sits near 30 °C and Earth-like pressure — the least hostile place off Earth in the inner system, though the acidity remains brutal."}
+  },
+  {
+    id:"earth", name:"Earth", kind:"Terrestrial planet",
+    tag:"The only place where the temperature, the pressure and the chemistry all happen to line up.",
+    a:1.0, radius:6.37, period:365.26, spin:23.93, tilt:23.4, color:0x3f7cb5,
+    texture:{base:"#2d5f8f", type:"earth", accent:"#4a7c3f"},
+    facts:[
+      ["Diameter","12,742 km",""],
+      ["Distance from Sun","149.6 M km","1 AU, by definition"],
+      ["Year","365.26 days",""],
+      ["Day","23 h 56 m","sidereal rotation"],
+      ["Gravity","9.81 m/s²",""],
+      ["Temperature","−88 to 58 °C","recorded surface extremes"]
+    ],
+    comp:[["Nitrogen",78.1,"#7fb3d5"],["Oxygen",21.0,"#3f7cb5"],["Argon & trace",0.9,"#c9a227"]],
+    moons:"One — the Moon, 3,475 km across and unusually large relative to its planet.",
+    history:"Earth formed about 4.54 billion years ago. Roughly 100 million years later a Mars-sized body struck it; the debris settled into orbit and became the Moon. That Moon is the reason Earth's axial tilt stays stable at around 23.4°, which is the reason seasons are regular rather than chaotic.\n\nLife appears in the record by at least 3.5 billion years ago. Around 2.4 billion years ago photosynthetic bacteria flooded the atmosphere with oxygen — catastrophic for almost everything then alive, and the precondition for everything since.\n\nThe Moon is drifting away at about 3.8 cm a year, which is slowly lengthening the day.",
+    ahead:[["Aug 2027","Total solar eclipse over Spain, North Africa and the Arabian Peninsula — the longest land totality of the century at 6 min 23 s."],["2028","Asteroid 2001 CB21 and several others make routine tracked passes; none on a collision path."],["2030s","Artemis programme aims to establish a sustained presence on the lunar surface."]],
+    hab:{v:"Habitable",t:"Liquid water, a magnetic field deflecting solar wind, and an atmosphere thick enough to hold heat without trapping too much of it."}
+  },
+  {
+    id:"mars", name:"Mars", kind:"Terrestrial planet",
+    tag:"A cold desert that was once warm and wet, and lost its atmosphere to space.",
+    a:1.524, radius:3.39, period:686.98, spin:24.62, tilt:25.2, color:0xb5573a,
+    texture:{base:"#b5573a", type:"cratered", accent:"#7d3a26"},
+    facts:[
+      ["Diameter","6,779 km","53% of Earth"],
+      ["Distance from Sun","227.9 M km","1.52 AU"],
+      ["Year","687 Earth days","1.88 Earth years"],
+      ["Day","24 h 37 m","almost exactly Earth's"],
+      ["Gravity","3.72 m/s²","38% of Earth's"],
+      ["Temperature","−153 to 20 °C","−63 °C average"]
+    ],
+    comp:[["Carbon dioxide",95.3,"#b5573a"],["Nitrogen",2.7,"#7fb3d5"],["Argon & trace",2.0,"#c9a227"]],
+    moons:"Two — Phobos and Deimos, both small, irregular, and probably captured asteroids. Phobos is spiralling inward and will break apart in roughly 50 million years.",
+    history:"Mars once had a magnetic field, a thicker atmosphere, and running water. River valleys, deltas and lake beds are visible from orbit, and rovers have found minerals that only form in water. When the core cooled and the magnetic field shut down, the solar wind stripped the atmosphere away over hundreds of millions of years.\n\nOlympus Mons stands 21.9 km high — nearly three times Everest — and exists because Mars has no plate tectonics, so a volcano can sit over a hotspot and build for aeons.\n\nWater survives today as polar ice and buried glaciers; the question of whether microbial life ever took hold remains genuinely open.",
+    ahead:[["2028","ESA's Rosalind Franklin rover is scheduled to launch, carrying a two-metre drill to sample below the radiation-sterilised surface."],["2028 – 2029","Next favourable launch windows; Mars and Earth align for transfer roughly every 26 months."],["2030s","Mars Sample Return remains under redesign — the cached tubes from Perseverance are still waiting."]],
+    hab:{v:"Not currently habitable",t:"Thin atmosphere, no magnetic shielding, and surface temperatures and radiation both hostile. Subsurface briny water is the best remaining candidate for present-day life."}
+  },
+  {
+    id:"jupiter", name:"Jupiter", kind:"Gas giant",
+    tag:"Twice the mass of every other planet combined, and the reason the inner system is as calm as it is.",
+    a:5.203, radius:69.91, period:4332.6, spin:9.93, tilt:3.1, color:0xc9a27a,
+    texture:{base:"#c9a27a", type:"bands", accent:"#8a5a3b", spot:true},
+    facts:[
+      ["Diameter","139,820 km","11 Earths across"],
+      ["Distance from Sun","778.5 M km","5.20 AU"],
+      ["Year","11.86 Earth years",""],
+      ["Day","9 h 56 m","fastest spin in the system"],
+      ["Gravity","24.79 m/s²","2.5× Earth's"],
+      ["Cloud-top temp","−145 °C","core may exceed 20,000 °C"]
+    ],
+    comp:[["Hydrogen",89.8,"#c9a27a"],["Helium",10.2,"#8a5a3b"]],
+    moons:"95 confirmed. The four Galilean moons — Io, Europa, Ganymede and Callisto — were the first objects seen orbiting something other than Earth, in 1610. Ganymede is larger than Mercury.",
+    history:"Jupiter formed first and largest, and its gravity shaped everything that came after — it is the reason the asteroid belt never coalesced into a planet, and it deflects or absorbs a significant share of the comets that would otherwise reach the inner system.\n\nIt has no solid surface. Pressure rises with depth until hydrogen behaves as a liquid metal, and that layer generates a magnetic field twenty thousand times stronger than Earth's.\n\nThe Great Red Spot is a storm wider than Earth that has been observed for at least 190 years and possibly since the 1660s. It has been measurably shrinking for decades.",
+    ahead:[["2030","NASA's Europa Clipper is scheduled to arrive and begin dozens of flybys of Europa, assessing the ocean beneath its ice."],["2031","ESA's JUICE arrives to study Ganymede, Callisto and Europa, eventually entering orbit around Ganymede."]],
+    hab:{v:"Uninhabitable — but its moons are not",t:"Europa holds a saltwater ocean beneath its ice shell, kept liquid by tidal heating. It is among the strongest candidates for life anywhere off Earth."}
+  },
+  {
+    id:"saturn", name:"Saturn", kind:"Gas giant",
+    tag:"Less dense than water, wrapped in a ring system only a few tens of metres thick.",
+    a:9.537, radius:58.23, period:10759, spin:10.66, tilt:26.7, color:0xd9c188, ring:true,
+    texture:{base:"#d9c188", type:"bands", accent:"#a8905a"},
+    facts:[
+      ["Diameter","116,460 km","9 Earths across"],
+      ["Distance from Sun","1.43 B km","9.54 AU"],
+      ["Year","29.4 Earth years",""],
+      ["Day","10 h 42 m",""],
+      ["Density","0.687 g/cm³","would float in water"],
+      ["Cloud-top temp","−178 °C",""]
+    ],
+    comp:[["Hydrogen",96.3,"#d9c188"],["Helium",3.3,"#a8905a"],["Methane & trace",0.4,"#7fb3d5"]],
+    moons:"146 confirmed — more than any other planet. Titan has a thick nitrogen atmosphere and lakes of liquid methane; Enceladus vents water from an ocean under its south pole.",
+    history:"The rings are almost pure water ice, spanning 280,000 km but averaging only around 10 metres thick — proportionally thinner than a sheet of paper the width of a football pitch. They are young, likely under 100 million years old, and are slowly raining down into the planet.\n\nCassini spent thirteen years in the system before being deliberately burned up in Saturn's atmosphere in 2017, to guarantee it could never contaminate Enceladus or Titan.\n\nSaturn's north pole carries a hexagonal jet stream about 30,000 km across, a shape no other planet displays.",
+    ahead:[["2028","NASA's Dragonfly is scheduled to launch — a nuclear-powered rotorcraft designed to fly between sites on Titan."],["2034","Dragonfly arrives at Titan and begins hopping across dunes and impact craters sampling organic chemistry."],["2038","The rings next appear edge-on from Earth and briefly vanish from view."]],
+    hab:{v:"Uninhabitable — but Enceladus and Titan are of real interest",t:"Enceladus's plumes contain water, salts and organic molecules. Titan has liquid on its surface, though methane rather than water."}
+  },
+  {
+    id:"uranus", name:"Uranus", kind:"Ice giant",
+    tag:"Knocked onto its side at some point in the deep past, and orbiting that way ever since.",
+    a:19.19, radius:25.36, period:30687, spin:-17.24, tilt:97.8, color:0x8fd4d9,
+    texture:{base:"#8fd4d9", type:"smooth", accent:"#5aa8ad"},
+    facts:[
+      ["Diameter","50,724 km","4 Earths across"],
+      ["Distance from Sun","2.87 B km","19.2 AU"],
+      ["Year","84 Earth years",""],
+      ["Day","17 h 14 m","retrograde"],
+      ["Axial tilt","97.8°","effectively rolling along its orbit"],
+      ["Cloud-top temp","−224 °C","the coldest measured in the system"]
+    ],
+    comp:[["Hydrogen",82.5,"#8fd4d9"],["Helium",15.2,"#5aa8ad"],["Methane",2.3,"#3f7cb5"]],
+    moons:"28 confirmed, named after characters from Shakespeare and Pope rather than classical mythology.",
+    history:"Uranus was the first planet discovered with a telescope, by William Herschel in 1781, who initially took it for a comet.\n\nSomething tipped it over — most likely one or more giant impacts early on. The result is that each pole spends 42 years in continuous sunlight and then 42 years in darkness. Its magnetic field is also tilted about 59° from its rotation axis and offset from the centre of the planet, which nothing has fully explained.\n\nThe blue-green comes from methane in the upper atmosphere absorbing red light. Only one spacecraft has ever visited: Voyager 2, for a few hours in January 1986.",
+    ahead:[["2030s","A Uranus Orbiter and Probe was ranked the highest-priority large mission by the 2023 planetary decadal survey; launch would depend on funding."],["2049","The next equinox, when the Sun crosses the planet's equator and both hemispheres are briefly lit."]],
+    hab:{v:"Uninhabitable",t:"No surface, temperatures near absolute cold, and an interior of high-pressure water, ammonia and methane ices."}
+  },
+  {
+    id:"neptune", name:"Neptune", kind:"Ice giant",
+    tag:"Found by mathematics before it was found by telescope, and still the windiest place known.",
+    a:30.07, radius:24.62, period:60190, spin:16.11, tilt:28.3, color:0x3f5fc9,
+    texture:{base:"#3f5fc9", type:"smooth", accent:"#2a3f8a"},
+    facts:[
+      ["Diameter","49,244 km","3.9 Earths across"],
+      ["Distance from Sun","4.5 B km","30.1 AU"],
+      ["Year","164.8 Earth years","one orbit since discovery"],
+      ["Day","16 h 6 m",""],
+      ["Wind speed","2,100 km/h","supersonic, the fastest recorded"],
+      ["Cloud-top temp","−214 °C",""]
+    ],
+    comp:[["Hydrogen",80.0,"#3f5fc9"],["Helium",19.0,"#2a3f8a"],["Methane",1.5,"#7fb3d5"]],
+    moons:"16 confirmed. Triton orbits backwards — a captured Kuiper Belt object — and is slowly spiralling inward toward destruction.",
+    history:"Neptune's position was predicted on paper from irregularities in Uranus's orbit, and the planet was found in 1846 within a degree of where the mathematics said it would be. It remains one of the cleanest predictive successes in the history of science.\n\nIt radiates about 2.6 times more energy than it receives from the Sun, and nobody is entirely sure where that internal heat comes from. That energy drives storms at supersonic speed in an atmosphere colder than −200 °C.\n\nVoyager 2 photographed a Great Dark Spot in 1989. By 1994 it had vanished, and a new one had formed elsewhere.",
+    ahead:[["2030s","Concept studies for a Neptune–Triton orbiter continue, but no mission is currently approved or funded."],["2046","Triton reaches a favourable alignment often cited in mission-planning studies for a Neptune flyby trajectory."]],
+    hab:{v:"Uninhabitable",t:"Triton's nitrogen geysers and possible subsurface ocean make the moon a more interesting target than the planet."}
+  }
+];
+
+/* ============================================================
+   SCENE
+   ============================================================ */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.5, 400000);
+const renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+scene.fog = null;
+
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- procedural textures ---------- */
+function noiseCanvas(w,h){const c=document.createElement("canvas");c.width=w;c.height=h;return c;}
+
+function makeTexture(spec){
+  const c = noiseCanvas(1024,512), g = c.getContext("2d");
+  g.fillStyle = spec.base; g.fillRect(0,0,1024,512);
+
+  if(spec.type==="bands"){
+    for(let i=0;i<46;i++){
+      const y=Math.random()*512, h=6+Math.random()*38;
+      g.globalAlpha=.12+Math.random()*.22;
+      g.fillStyle = Math.random()>.5 ? spec.accent : "#ffffff";
+      g.beginPath();
+      for(let x=0;x<=1024;x+=16){
+        const wob=Math.sin(x*.012+i)*5;
+        x===0?g.moveTo(x,y+wob):g.lineTo(x,y+wob);
+      }
+      for(let x=1024;x>=0;x-=16){
+        const wob=Math.sin(x*.012+i)*5;
+        g.lineTo(x,y+h+wob);
+      }
+      g.closePath(); g.fill();
+    }
+    if(spec.spot){
+      g.globalAlpha=.75; g.fillStyle="#a83f28";
+      g.beginPath(); g.ellipse(300,320,86,42,0,0,7); g.fill();
+      g.globalAlpha=.35; g.fillStyle="#d9764f";
+      g.beginPath(); g.ellipse(300,320,58,26,0,0,7); g.fill();
+    }
+  }
+  else if(spec.type==="cratered"){
+    for(let i=0;i<900;i++){
+      const x=Math.random()*1024,y=Math.random()*512,r=1+Math.random()*13;
+      g.globalAlpha=.06+Math.random()*.3;
+      g.fillStyle=Math.random()>.45?spec.accent:"#ffffff";
+      g.beginPath(); g.arc(x,y,r,0,7); g.fill();
+    }
+  }
+  else if(spec.type==="earth"){
+    g.globalAlpha=1;
+    for(let i=0;i<130;i++){
+      const x=Math.random()*1024,y=90+Math.random()*332,r=14+Math.random()*62;
+      g.fillStyle=Math.random()>.35?spec.accent:"#6b8f4a";
+      g.globalAlpha=.55+Math.random()*.45;
+      g.beginPath(); g.ellipse(x,y,r,r*(.5+Math.random()*.6),Math.random()*3,0,7); g.fill();
+    }
+    g.globalAlpha=.9; g.fillStyle="#eaf2f7";
+    g.fillRect(0,0,1024,30); g.fillRect(0,482,1024,30);
+    for(let i=0;i<90;i++){
+      g.globalAlpha=.13+Math.random()*.2; g.fillStyle="#ffffff";
+      const x=Math.random()*1024,y=Math.random()*512,r=18+Math.random()*54;
+      g.beginPath(); g.ellipse(x,y,r,r*.35,0,0,7); g.fill();
+    }
+  }
+  else if(spec.type==="swirl"){
+    for(let i=0;i<200;i++){
+      g.globalAlpha=.05+Math.random()*.18;
+      g.fillStyle=Math.random()>.5?spec.accent:"#fff3d6";
+      const y=Math.random()*512;
+      g.beginPath(); g.ellipse(Math.random()*1024,y,90+Math.random()*220,5+Math.random()*16,0,0,7); g.fill();
+    }
+  }
+  else { // smooth ice giants
+    for(let i=0;i<70;i++){
+      g.globalAlpha=.05+Math.random()*.12;
+      g.fillStyle=Math.random()>.5?spec.accent:"#ffffff";
+      g.beginPath(); g.ellipse(Math.random()*1024,Math.random()*512,140+Math.random()*260,10+Math.random()*30,0,0,7); g.fill();
+    }
+  }
+  g.globalAlpha=1;
+  const t=new THREE.CanvasTexture(c);
+  t.anisotropy=4;
+  return t;
+}
+
+function sunTexture(){
+  const c=noiseCanvas(1024,512),g=c.getContext("2d");
+  g.fillStyle="#ffb547"; g.fillRect(0,0,1024,512);
+  for(let i=0;i<600;i++){
+    g.globalAlpha=.05+Math.random()*.2;
+    g.fillStyle=Math.random()>.5?"#fff3c4":"#e8722a";
+    const x=Math.random()*1024,y=Math.random()*512,r=8+Math.random()*46;
+    g.beginPath(); g.arc(x,y,r,0,7); g.fill();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
+function ringTexture(){
+  const c=noiseCanvas(1024,64),g=c.getContext("2d");
+  g.clearRect(0,0,1024,64);
+  for(let x=0;x<1024;x++){
+    const p=x/1024;
+    let a = .55 + Math.sin(p*54)*.16 + Math.sin(p*17)*.12;
+    if(p>.63&&p<.69) a=.05;            // Cassini division
+    if(p<.08||p>.97) a*=.25;
+    a=Math.max(0,Math.min(.92,a));
+    const sh=214+Math.sin(p*30)*26;
+    g.fillStyle=`rgba(${sh},${sh-24},${sh-72},${a})`;
+    g.fillRect(x,0,1,64);
+  }
+  const t=new THREE.CanvasTexture(c);
+  t.anisotropy=8;
+  return t;
+}
+
+function glowSprite(color,size){
+  const c=noiseCanvas(256,256),g=c.getContext("2d");
+  const grd=g.createRadialGradient(128,128,0,128,128,128);
+  grd.addColorStop(0,color+"ee"); grd.addColorStop(.22,color+"88");
+  grd.addColorStop(.55,color+"22"); grd.addColorStop(1,color+"00");
+  g.fillStyle=grd; g.fillRect(0,0,256,256);
+  const m=new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),blending:THREE.AdditiveBlending,depthWrite:false,transparent:true});
+  const s=new THREE.Sprite(m); s.scale.set(size,size,1);
+  return s;
+}
+
+/* ---------- starfield ---------- */
+function buildStars(){
+  const group=new THREE.Group();
+  const layers=[{n:6000,r:9000,s:9,o:.85},{n:4000,r:16000,s:16,o:.55},{n:2200,r:26000,s:26,o:.35}];
+  layers.forEach(L=>{
+    const geo=new THREE.BufferGeometry(), pos=[], col=[];
+    for(let i=0;i<L.n;i++){
+      const th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1), r=L.r*(.75+Math.random()*.45);
+      pos.push(r*Math.sin(ph)*Math.cos(th), r*Math.cos(ph)*.55, r*Math.sin(ph)*Math.sin(th));
+      const t=Math.random();
+      const c = t>.9 ? [.72,.82,1] : t>.76 ? [1,.86,.66] : t>.6 ? [1,.95,.86] : [1,1,1];
+      col.push(c[0],c[1],c[2]);
+    }
+    geo.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+    geo.setAttribute("color",new THREE.Float32BufferAttribute(col,3));
+    const mat=new THREE.PointsMaterial({size:L.s,vertexColors:true,transparent:true,opacity:L.o,sizeAttenuation:true,depthWrite:false});
+    group.add(new THREE.Points(geo,mat));
+  });
+
+  // faint galactic band
+  const geo=new THREE.BufferGeometry(),pos=[],col=[];
+  for(let i=0;i<9000;i++){
+    const th=Math.random()*Math.PI*2;
+    const r=20000*(.8+Math.random()*.4);
+    const band=(Math.random()-.5)*(1800+Math.random()*2600);
+    pos.push(r*Math.cos(th), band, r*Math.sin(th));
+    const b=.35+Math.random()*.4;
+    col.push(b,b*.94,b*.82);
+  }
+  geo.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+  geo.setAttribute("color",new THREE.Float32BufferAttribute(col,3));
+  group.add(new THREE.Points(geo,new THREE.PointsMaterial({size:20,vertexColors:true,transparent:true,opacity:.42,depthWrite:false})));
+
+  group.rotation.z=0.42;
+  return group;
+}
+const stars=buildStars(); scene.add(stars);
+
+/* ---------- sun ---------- */
+const SUN_R = 12;
+const sunMesh=new THREE.Mesh(
+  new THREE.SphereGeometry(SUN_R,64,48),
+  new THREE.MeshBasicMaterial({map:sunTexture()})
+);
+sunMesh.userData={record:SUN,radius:SUN_R,isSun:true};
+scene.add(sunMesh);
+const sunGlow1=glowSprite("#ffaa33",SUN_R*7);
+sunGlow1.position.copy(sunMesh.position);
+scene.add(sunGlow1);
+const sunGlow2=glowSprite("#ff7b1c",SUN_R*13); scene.add(sunGlow2);
+
+scene.add(new THREE.AmbientLight(0x223047,1.1));
+const sunLight=new THREE.PointLight(0xfff0d0,2.6,0,0);
+scene.add(sunLight);
+
+/* ---------- planets ---------- */
+const bodies=[], pickable=[];
+const SIZE_K = 0.055;     // radius km → scene units (exaggerated, or nothing is visible)
+const orbitGroup=new THREE.Group(); scene.add(orbitGroup);
+
+PLANETS.forEach((p,i)=>{
+  const r = 1.2 * Math.pow(p.radius, 0.45);
+  const pivot=new THREE.Group(); scene.add(pivot);
+
+  const mesh=new THREE.Mesh(
+    new THREE.SphereGeometry(r,48,36),
+    new THREE.MeshStandardMaterial({map:makeTexture(p.texture),roughness:.92,metalness:.02})
+  );
+  const degToRad = (THREE.MathUtils||THREE.Math).degToRad;
+  mesh.rotation.z = degToRad(p.tilt>90?p.tilt-180:p.tilt);
+  mesh.userData={record:p,radius:r};
+  pivot.add(mesh);
+  pickable.push(mesh);
+
+  if(p.id==="earth"||p.id==="venus"){
+    const atmo=new THREE.Mesh(
+      new THREE.SphereGeometry(r*1.045,40,28),
+      new THREE.MeshBasicMaterial({color:p.id==="earth"?0x5aa9e6:0xe8cf9a,transparent:true,opacity:.16,side:THREE.BackSide})
+    );
+    mesh.add(atmo);
+  }
+
+  if(p.ring){
+    const ring=new THREE.Mesh(
+      new THREE.RingGeometry(r*1.35,r*2.35,128,1),
+      new THREE.MeshBasicMaterial({map:ringTexture(),side:THREE.DoubleSide,transparent:true,opacity:.95,depthWrite:false})
+    );
+    // remap UVs so the texture runs radially
+    const pos=ring.geometry.attributes.position, uv=ring.geometry.attributes.uv, v=new THREE.Vector3();
+    for(let k=0;k<pos.count;k++){
+      v.fromBufferAttribute(pos,k);
+      const d=(v.length()-r*1.35)/(r*2.35-r*1.35);
+      uv.setXY(k,d,0.5);
+    }
+    ring.rotation.x=Math.PI/2;
+    mesh.add(ring);
+  }
+
+  // moon(s) — representative, for visual life
+  const moonCount = p.id==="earth"?1 : p.id==="mars"?2 : p.id==="jupiter"?4 : p.id==="saturn"?3 : p.id==="uranus"?2 : p.id==="neptune"?1 : 0;
+  const moons=[];
+  for(let m=0;m<moonCount;m++){
+    const mm=new THREE.Mesh(
+      new THREE.SphereGeometry(r*(.16+Math.random()*.12),20,14),
+      new THREE.MeshStandardMaterial({color:0xb9b2a6,roughness:1})
+    );
+    const dist=r*(2.0+m*0.85);
+    mm.userData={d:dist,sp:0.55/(1+m*0.5),ph:Math.random()*7};
+    pivot.add(mm); moons.push(mm);
+  }
+
+  const dist=AU*Math.pow(p.a,0.62)*1.55; // compressed radially, keeps outer planets reachable
+  const ringGeo=new THREE.RingGeometry(dist-0.28,dist+0.28,220);
+  const orbit=new THREE.Mesh(ringGeo,new THREE.MeshBasicMaterial({color:0xc9a227,transparent:true,opacity:.14,side:THREE.DoubleSide,depthWrite:false}));
+  orbit.rotation.x=Math.PI/2;
+  orbitGroup.add(orbit);
+
+  bodies.push({data:p,pivot,mesh,moons,dist,angle:Math.random()*Math.PI*2,r});
+});
+
+/* ============================================================
+   CAMERA RIG
+   ============================================================ */
+const rig = {
+  target:new THREE.Vector3(0,0,0),
+  goalTarget:new THREE.Vector3(0,0,0),
+  theta:0.9, goalTheta:0.9,
+  phi:1.15, goalPhi:1.15,
+  dist:2600, goalDist:2600,
+  autoSpin:true
+};
+function applyCamera(){
+  const st=Math.sin(rig.phi)*rig.dist;
+  camera.position.set(
+    rig.target.x+st*Math.cos(rig.theta),
+    rig.target.y+Math.cos(rig.phi)*rig.dist,
+    rig.target.z+st*Math.sin(rig.theta)
+  );
+  camera.lookAt(rig.target);
+}
+applyCamera();
+
+let dragging=false,lastX=0,lastY=0,moved=0;
+const el=renderer.domElement;
+function down(x,y){dragging=true;lastX=x;lastY=y;moved=0;rig.autoSpin=false;}
+function move(x,y){
+  if(!dragging)return;
+  const dx=x-lastX,dy=y-lastY; lastX=x;lastY=y; moved+=Math.abs(dx)+Math.abs(dy);
+  rig.goalTheta-=dx*0.005;
+  rig.goalPhi=Math.max(0.12,Math.min(3.02,rig.goalPhi-dy*0.005));
+}
+function up(){dragging=false;}
+el.addEventListener("mousedown",e=>down(e.clientX,e.clientY));
+addEventListener("mousemove",e=>move(e.clientX,e.clientY));
+addEventListener("mouseup",up);
+el.addEventListener("touchstart",e=>{if(e.touches.length===1)down(e.touches[0].clientX,e.touches[0].clientY)},{passive:true});
+el.addEventListener("touchmove",e=>{if(e.touches.length===1)move(e.touches[0].clientX,e.touches[0].clientY)},{passive:true});
+addEventListener("touchend",up);
+el.addEventListener("wheel",e=>{
+  e.preventDefault();
+  rig.autoSpin=false;
+  rig.goalDist=Math.max(24,Math.min(14000,rig.goalDist*(1+Math.sign(e.deltaY)*0.11)));
+},{passive:false});
+
+/* pinch */
+let pinch=0;
+el.addEventListener("touchstart",e=>{
+  if(e.touches.length===2){
+    pinch=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    rig.autoSpin=false;
+  }
+},{passive:true});
+el.addEventListener("touchmove",e=>{
+  if(e.touches.length===2&&pinch){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    rig.goalDist=Math.max(24,Math.min(14000,rig.goalDist*(pinch/d)));
+    pinch=d;
+  }
+},{passive:true});
+
+/* ============================================================
+   PICKING
+   ============================================================ */
+const ray=new THREE.Raycaster(), ndc=new THREE.Vector2();
+el.addEventListener("click",e=>{
+  if(moved>7)return;
+  ndc.x=(e.clientX/innerWidth)*2-1;
+  ndc.y=-(e.clientY/innerHeight)*2+1;
+  ray.setFromCamera(ndc,camera);
+  const hits=ray.intersectObjects([...pickable,sunMesh],false);
+  if(hits.length) focusOn(hits[0].object);
+});
+
+let focused=null;
+function focusOn(mesh){
+  focused=mesh;
+  const rec=mesh.userData.record;
+  rig.goalDist=Math.max(mesh.userData.radius*5.2, 26);
+  rig.goalPhi=1.15;
+  rig.autoSpin=false;
+  openPanel(rec);
+}
+
+/* ============================================================
+   PANEL
+   ============================================================ */
+const panel=document.getElementById("panel");
+const pKind=document.getElementById("pKind"), pName=document.getElementById("pName"),
+      pTag=document.getElementById("pTag"), pBody=document.getElementById("pBody");
+
+function openPanel(rec){
+  pKind.textContent=rec.kind;
+  pName.textContent=rec.name;
+  pTag.textContent=rec.tag;
+
+  let html='<dl class="facts">';
+  rec.facts.forEach(([k,v,s])=>{
+    html+=`<div class="fact"><dt>${k}</dt><dd>${v}${s?`<small>${s}</small>`:""}</dd></div>`;
+  });
+  html+="</dl>";
+
+  html+='<div class="sect"><h3>What it is made of</h3><div class="bar">';
+  rec.comp.forEach(([n,pc,c])=>{html+=`<span style="width:${pc}%;background:${c}"></span>`});
+  html+='</div><div class="comp-key">';
+  rec.comp.forEach(([n,pc,c])=>{html+=`<span><i style="background:${c}"></i>${n} ${pc}%</span>`});
+  html+="</div></div>";
+
+  if(rec.moons) html+=`<div class="sect"><h3>Moons</h3><p>${rec.moons}</p></div>`;
+
+  html+=`<div class="sect"><h3>History</h3>${rec.history.split("\n\n").map(t=>`<p>${t}</p>`).join("")}</div>`;
+
+  html+='<div class="sect"><h3>What happens next</h3><div class="ahead">';
+  rec.ahead.forEach(([w,t])=>{html+=`<div><b>${w}</b>${t}</div>`});
+  html+="</div></div>";
+
+  if(rec.hab) html+=`<div class="hab"><strong>${rec.hab.v}</strong>${rec.hab.t}</div>`;
+
+  pBody.innerHTML=html;
+  pBody.parentElement.scrollTop=0;
+  panel.classList.add("open");
+}
+function closePanel(){panel.classList.remove("open");focused=null;}
+document.getElementById("closeBtn").addEventListener("click",closePanel);
+addEventListener("keydown",e=>{if(e.key==="Escape")closePanel()});
+
+/* ============================================================
+   LABELS
+   ============================================================ */
+const labelLayer=document.getElementById("labels");
+const labelEls=new Map();
+[...bodies.map(b=>({mesh:b.mesh,name:b.data.name})),{mesh:sunMesh,name:"The Sun"}].forEach(o=>{
+  const d=document.createElement("button");
+  d.className="lbl"; d.textContent=o.name;
+  d.addEventListener("click",ev=>{ev.stopPropagation();focusOn(o.mesh)});
+  labelLayer.appendChild(d);
+  labelEls.set(o.mesh,d);
+});
+let labelsOn=true;
+const v3=new THREE.Vector3();
+function updateLabels(){
+  labelEls.forEach((el,mesh)=>{
+    if(!labelsOn || homeMode){el.style.display="none";return}
+    mesh.getWorldPosition(v3);
+    const d=v3.distanceTo(camera.position);
+    v3.project(camera);
+    const vis = v3.z<1 && d<9000;
+    el.style.display = vis?"block":"none";
+    if(!vis)return;
+    el.style.left=((v3.x*.5+.5)*innerWidth)+"px";
+    el.style.top=((-v3.y*.5+.5)*innerHeight - (mesh.userData.radius/d)*innerHeight*0.9 - 14)+"px";
+    el.classList.toggle("dim", d>3400);
+  });
+}
+
+/* ============================================================
+   CONTROLS
+   ============================================================ */
+const rateInput=document.getElementById("rate"), rateOut=document.getElementById("rateOut");
+let daysPerSec=7;
+/* Axial spin is damped relative to orbital motion. At the true ratio a planet
+   would blur into a smear at any time rate fast enough to show an orbit. */
+const SPIN_DAMP = 0.02;
+function rateFromSlider(v){ return Math.pow(v/100,3)*900 + 0.15; }
+function syncRate(){
+  daysPerSec=rateFromSlider(+rateInput.value);
+  rateOut.textContent = daysPerSec<1 ? daysPerSec.toFixed(2)+" d/s"
+    : daysPerSec<400 ? Math.round(daysPerSec)+" d/s"
+    : (daysPerSec/365).toFixed(1)+" y/s";
+}
+rateInput.addEventListener("input",syncRate); syncRate();
+
+const orbitsBtn=document.getElementById("orbitsBtn");
+orbitsBtn.addEventListener("click",()=>{
+  const on=orbitsBtn.getAttribute("aria-pressed")==="true";
+  orbitsBtn.setAttribute("aria-pressed",String(!on));
+  orbitGroup.visible=!on;
+});
+const labelsBtn=document.getElementById("labelsBtn");
+labelsBtn.addEventListener("click",()=>{
+  labelsOn=labelsBtn.getAttribute("aria-pressed")!=="true";
+  labelsBtn.setAttribute("aria-pressed",String(labelsOn));
+});
+document.getElementById("wideBtn").addEventListener("click",()=>{
+  focused=null; closePanel();
+  rig.goalTarget.set(0,0,0); rig.goalDist=2600; rig.goalPhi=0.72; rig.autoSpin=false;
+});
+document.getElementById("homeBtn").addEventListener("click",()=>{
+  focused=null; closePanel();
+  rig.goalTarget.set(0,0,0); rig.goalDist=5200; rig.goalPhi=1.25; rig.autoSpin=true;
+});
+
+/* ============================================================
+   GATE → FLY IN
+   ============================================================ */
+const gate=document.getElementById("gate"), hud=document.getElementById("hud");
+const earthBody = bodies.find(b=>b.data.id==="earth");
+
+/* homepage: parked close to Earth, watching it turn */
+let entered=false;
+let homeMode=true;
+rig.dist=rig.goalDist = earthBody.r*7.5;
+rig.phi=rig.goalPhi=1.32;
+rig.theta=rig.goalTheta=0.6;
+rig.autoSpin=true;
+earthBody.mesh.getWorldPosition(rig.target);
+rig.goalTarget.copy(rig.target);
+applyCamera();
+
+document.getElementById("enterBtn").addEventListener("click",()=>{
+  if(entered)return; entered=true; homeMode=false;
+  gate.classList.add("gone");
+  rig.goalTarget.set(0,0,0);
+  rig.goalDist=1500; rig.goalPhi=0.86; rig.autoSpin=true;
+  setTimeout(()=>{hud.classList.add("on");gate.style.display="none"},900);
+});
+
+/* ============================================================
+   LOOP
+   ============================================================ */
+let prev=performance.now(), elapsedDays=0;
+const lerp=(a,b,t)=>a+(b-a)*t;
+
+function tick(now){
+  requestAnimationFrame(tick);
+  const dt=Math.min((now-prev)/1000,0.05); prev=now;
+  elapsedDays += dt*daysPerSec;
+
+  bodies.forEach(b=>{
+    const ang = b.angle + (elapsedDays/b.data.period)*Math.PI*2;
+    b.pivot.position.set(Math.cos(ang)*b.dist, 0, Math.sin(ang)*b.dist);
+    b.mesh.rotation.y += dt*(24/Math.abs(b.data.spin))*Math.sign(b.data.spin)*daysPerSec*Math.PI*2*SPIN_DAMP;
+    b.moons.forEach(m=>{
+      m.userData.ph += dt*m.userData.sp*daysPerSec*0.06;
+      m.position.set(Math.cos(m.userData.ph)*m.userData.d,0,Math.sin(m.userData.ph)*m.userData.d);
+    });
+  });
+
+  sunMesh.rotation.y += dt*0.02;
+  sunGlow2.material.opacity = 0.55+Math.sin(now*0.0007)*0.08;
+  if(!reduceMotion) stars.rotation.y += dt*0.0009;
+
+  if(homeMode){
+    earthBody.mesh.getWorldPosition(rig.goalTarget);
+  } else if(focused){
+    focused.getWorldPosition(rig.goalTarget);
+  }
+  if(rig.autoSpin && !dragging) rig.goalTheta += dt*0.035;
+
+  rig.target.lerp(rig.goalTarget,1-Math.pow(0.0025,dt));
+  rig.theta = lerp(rig.theta,rig.goalTheta,1-Math.pow(0.002,dt));
+  rig.phi   = lerp(rig.phi,rig.goalPhi,1-Math.pow(0.004,dt));
+  rig.dist  = lerp(rig.dist,rig.goalDist,1-Math.pow(0.004,dt));
+  applyCamera();
+
+  updateLabels();
+  renderer.render(scene,camera);
+}
+requestAnimationFrame(tick);
+
+addEventListener("resize",()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
